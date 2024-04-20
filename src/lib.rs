@@ -73,7 +73,7 @@ async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
         }
     };
 
-    let mut imgbuf = ImageBuffer::<Rgba<u8>, Vec<u8>>::new(IMAGE_WIDTH as u32, IMAGE_HEIGHT as u32);
+    let mut imgbuf = ImageBuffer::from_pixel(IMAGE_WIDTH, IMAGE_HEIGHT, Rgba([255, 255, 255, 1]));
     imgbuf = render_text(
         font.clone(),
         PxScale::from(70.0),
