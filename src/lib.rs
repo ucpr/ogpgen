@@ -105,7 +105,7 @@ async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
         }
     };
 
-    let mut imgbuf = ImageBuffer::from_pixel(IMAGE_WIDTH, IMAGE_HEIGHT, Rgba([255, 255, 255, 0]));
+    let mut imgbuf = ImageBuffer::from_pixel(IMAGE_WIDTH, IMAGE_HEIGHT, Rgba([255, 255, 255, 255]));
     imgbuf = render_text(
         font.clone(),
         PxScale::from(70.0),
@@ -216,10 +216,10 @@ fn render_glyphs<F: Font>(
             outlined.draw(|x, y, v| {
                 let px = imgbuf.get_pixel_mut(x + bounds.min.x as u32, y + bounds.min.y as u32);
                 *px = Rgba([
-                    text_color.0,
-                    text_color.1,
-                    text_color.2,
-                    px.0[3].saturating_add((v * 255.0) as u8),
+                    (px.0[0] as f32 * (1.0 - v) + text_color.0 as f32 * v) as u8,
+                    (px.0[1] as f32 * (1.0 - v) + text_color.1 as f32 * v) as u8,
+                    (px.0[2] as f32 * (1.0 - v) + text_color.2 as f32 * v) as u8,
+                    255,
                 ]);
             });
         }
