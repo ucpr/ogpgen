@@ -9,6 +9,8 @@ use log;
 const IMAGE_WIDTH: u32 = 1200;
 const IMAGE_HEIGHT: u32 = 630;
 
+const INTERNAL_SERVER_ERROR: &str = "Internal Server Error";
+
 fn query(req: &Request, key: &str) -> Option<String> {
     req.url()
         .ok()?
@@ -19,6 +21,36 @@ fn query(req: &Request, key: &str) -> Option<String> {
 
 #[event(fetch)]
 async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
+    if req.method() != Method::Get {
+        return Response::error("Method Not Allowed".to_string(), 405);
+    }
+
+    let url = match req.url() {
+        Ok(url) => url,
+        _ => {
+            log::error!("failed to get url");
+            return Response::error(INTERNAL_SERVER_ERROR.to_string(), 500);
+        }
+    };
+    let cache = Cache::default();
+    let cache_key = CacheKey::Url(url.to_string());
+
+    let cached = match cache.get(cache_key, false).await {
+        Ok(cached) => cached,
+        Err(e) => {
+            log::error!("failed to get cache: {e}");
+            None
+        }
+    };
+    match cached {
+        Some(cached) => {
+            return Ok(cached);
+        }
+        None => {
+            log::info!("cache not found (url = {url})");
+        }
+    }
+
     let text = match query(&req, "text") {
         Some(text) => {
             if text.len() > 150 {
@@ -47,7 +79,7 @@ async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
         Ok(bucket) => bucket,
         Err(e) => {
             log::error!("failed to get bucket: {e}");
-            return Response::error("failed to get bucket".to_string(), 500);
+            return Response::error(INTERNAL_SERVER_ERROR.to_string(), 500);
         }
     };
     let raw_font = match bucket.get("MPLUS1p-Medium.ttf").execute().await {
@@ -55,12 +87,12 @@ async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
             Some(raw_font) => raw_font,
             None => {
                 log::error!("font is not found");
-                return Response::error("font not found".to_string(), 404);
+                return Response::error(INTERNAL_SERVER_ERROR.to_string(), 404);
             }
         },
         Err(e) => {
             log::error!("failed to get font: {e}");
-            return Response::error("failed to get font".to_string(), 500);
+            return Response::error(INTERNAL_SERVER_ERROR.to_string(), 500);
         }
     };
     let raw_font = raw_font.body().unwrap().bytes().await.unwrap();
@@ -69,11 +101,11 @@ async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
         Ok(font) => font,
         Err(e) => {
             log::error!("failed to load font: {e}");
-            return Response::error("failed to load font".to_string(), 500);
+            return Response::error(INTERNAL_SERVER_ERROR.to_string(), 500);
         }
     };
 
-    let mut imgbuf = ImageBuffer::from_pixel(IMAGE_WIDTH, IMAGE_HEIGHT, Rgba([255, 255, 255, 1]));
+    let mut imgbuf = ImageBuffer::from_pixel(IMAGE_WIDTH, IMAGE_HEIGHT, Rgba([255, 255, 255, 0]));
     imgbuf = render_text(
         font.clone(),
         PxScale::from(70.0),
@@ -102,14 +134,17 @@ async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
     let mut buffer = std::io::Cursor::new(vec![]);
     match imgbuf.write_to(&mut buffer, image::ImageFormat::Png) {
         Ok(_) => {}
-        Err(e) => return Response::error(format!("画像の書き込みに失敗しました: {}", e), 500),
+        Err(e) => {
+            log::error!("failed to write image: {e}");
+            return Response::error(INTERNAL_SERVER_ERROR.to_string(), 500);
+        }
     }
 
     let resp = match Response::from_bytes(buffer.into_inner()) {
         Ok(resp) => resp,
         Err(e) => {
             log::error!("failed to create response: {e}");
-            return Response::error("failed to create response".to_string(), 500);
+            return Response::error(INTERNAL_SERVER_ERROR.to_string(), 500);
         }
     };
     let mut headers = Headers::new();
@@ -117,7 +152,7 @@ async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
         Ok(_) => {}
         Err(e) => {
             log::error!("failed to set content-type header: {e}");
-            return Response::error("failed to set content-type header".to_string(), 500);
+            return Response::error(INTERNAL_SERVER_ERROR.to_string(), 500);
         }
     };
     match headers.set("Cache-Control", "public, max-age=604800") {
@@ -125,11 +160,26 @@ async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
         Ok(_) => {}
         Err(e) => {
             log::error!("failed to set Cache-Control header: {e}");
-            return Response::error("failed to set Cache-Control header".to_string(), 500);
+            return Response::error(INTERNAL_SERVER_ERROR.to_string(), 500);
+        }
+    };
+    let mut resp = resp.with_headers(headers);
+    let cloned_resp = match resp.cloned() {
+        Ok(cloned_resp) => cloned_resp,
+        Err(e) => {
+            log::error!("failed to clone response: {e}");
+            return Response::error(INTERNAL_SERVER_ERROR.to_string(), 500);
+        }
+    };
+    match cache.put(url.to_string(), cloned_resp).await {
+        Ok(_) => {}
+        Err(e) => {
+            // cache に保存できなくてもレスポンスは返す
+            log::error!("failed to put cache: {e}");
         }
     };
 
-    Ok(resp.with_headers(headers))
+    Ok(resp)
 }
 
 fn render_text<F: Font>(
