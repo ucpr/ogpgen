@@ -1,10 +1,7 @@
-extern crate rusttype;
-
-use worker::*;
-
 use ab_glyph::{point, Font, FontRef, Glyph, Point, PxScale, ScaleFont};
 use image::{ImageBuffer, Rgba};
 use log;
+use worker::*;
 
 const IMAGE_WIDTH: u32 = 1200;
 const IMAGE_HEIGHT: u32 = 630;

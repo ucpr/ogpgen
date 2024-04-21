@@ -9,10 +9,8 @@ crate-type = ["cdylib"]
 [dependencies]
 ab_glyph = "0.2.25"
 image = "0.25.1"
-imageproc = "0.24.0"
 log = "0.4.21"
 num-complex = "0.4.5"
-rusttype = "0.9.3"
 worker = "0.0.18"
 
 [profile.release]
